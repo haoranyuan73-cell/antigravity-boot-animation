@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Antigravity Boot Overlay</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #demo-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    #stage {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      overflow: hidden;
+      background: #0c0d24;
+      transform-origin: center center;
+      transition: opacity 0.25s ease-out;
+    }
+    video {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }
+    #portal-world {
+      position: fixed;
+      display: none;
+      z-index: 2;
+      overflow: hidden;
+      pointer-events: none;
+      border-radius: 6px;
+      box-shadow:
+        inset 0 0 26px rgba(196, 178, 255, 0.42),
+        0 0 24px rgba(144, 120, 255, 0.28);
+      transform-origin: center center;
+    }
+    #portal-wp {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: brightness(0.76) saturate(1.04);
+    }
+    #portal-scrim {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(162, 142, 255, 0.14), rgba(18, 16, 44, 0.48));
+    }
+    #portal-logo {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 56px;
+      height: 56px;
+      transform: translate(-50%, -50%);
+      color: #eef4ff;
+      filter: drop-shadow(0 0 16px rgba(176, 198, 255, 0.72));
+      animation: logo-breathe 2.2s infinite ease-in-out;
+    }
+    @keyframes logo-breathe {
+      0%, 100% { opacity: 0.72; transform: translate(-50%, -50%) scale(0.96); }
+      50% { opacity: 0.98; transform: translate(-50%, -50%) scale(1.04); }
+    }
+    #drag-strip {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 36px;
+      z-index: 10;
+      -webkit-app-region: drag;
+    }
+  </style>
+</head>
+<body>
+  <img id="demo-bg" alt="" />
+  <div id="stage">
+    <video id="boot-video" playsinline preload="auto"></video>
+  </div>
+  <div id="portal-world">
+    <img id="portal-wp" alt="" />
+    <div id="portal-scrim"></div>
+    <svg id="portal-logo" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z" fill="currentColor" />
+    </svg>
+  </div>
+  <div id="drag-strip"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var params = new URLSearchParams(window.location.search || '');
+      var isDemo = params.get('demo') === '1';
+      var variant = params.get('variant') === 'trio' ? 'trio' : 'solo';
+      var wpParam = params.get('wp') || '';
+
+      var PORTAL_RECTS = {
+        solo: { x: 0.064, y: 0.147, w: 0.630, h: 0.599 },
+        trio: { x: 0.187, y: 0.289, w: 0.510, h: 0.371 }
+      };
+      var PORTAL = PORTAL_RECTS[variant];
+
+      var PORTAL_IN_START = 4.95;
+      var PORTAL_IN_END = 5.65;
+      var EXPAND_START = 8.15;
+      var EXPAND_END = 9.42;
+      var DURATION = 9.50;
+
+      var stage = document.getElementById('stage');
+      var video = document.getElementById('boot-video');
+      var portalWorld = document.getElementById('portal-world');
+      var portalWp = document.getElementById('portal-wp');
+      var portalLogo = document.getElementById('portal-logo');
+      var demoBg = document.getElementById('demo-bg');
+
+      var hubReady = isDemo;
+      var hubReadyAt = isDemo ? 0 : -1;
+      var finished = false;
+      var rafId = 0;
+
+      function toFileUrl(p) {
+        if (!p) return '../wallpapers/optimized/gemini/gemini-catgirl-twilight-terrace.png';
+        if (/^(file|https?|data):/i.test(p)) return p;
+        var norm = p.replace(/\\/g, '/');
+        if (/^[a-zA-Z]:\//.test(norm)) return encodeURI('file:///' + norm);
+        return encodeURI(norm);
+      }
+
+      var wpUrl = toFileUrl(wpParam);
+      portalWp.src = wpUrl;
+      portalWp.addEventListener('error', function () {
+        portalWp.src = '../wallpapers/optimized/gemini/gemini-catgirl-twilight-terrace.png';
+      });
+
+      if (isDemo) {
+        demoBg.src = wpUrl;
+        demoBg.style.display = 'block';
+      }
+
+      video.src = variant === 'trio'
+        ? './反重力开场_三AI娘同框版.mp4'
+        : './反重力开场_Gemini单人版.mp4';
+
+      function clamp(v, lo, hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function smoothstep(t) {
+        var c = clamp(t, 0, 1);
+        return c * c * (3 - 2 * c);
+      }
+
+      function getVideoCoverBox(vw, vh) {
+        var vidAspect = 16 / 9;
+        var viewAspect = vw / Math.max(1, vh);
+        var rw = vw;
+        var rh = vh;
+        var ox = 0;
+        var oy = 0;
+        if (viewAspect > vidAspect) {
+          rw = vw;
+          rh = vw / vidAspect;
+          oy = (vh - rh) * 0.5;
+        } else if (viewAspect < vidAspect) {
+          rh = vh;
+          rw = vh * vidAspect;
+          ox = (vw - rw) * 0.5;
+        }
+        return { ox: ox, oy: oy, rw: rw, rh: rh };
+      }
+
+      function signalTitle(title) {
+        if (finished) return;
+        finished = true;
+        if (rafId) cancelAnimationFrame(rafId);
+        document.title = title;
+      }
+
+      window.__agHubReady = function () {
+        if (!hubReady) {
+          hubReady = true;
+          hubReadyAt = video.currentTime || 0;
+        }
+      };
+
+      function skipPlayback() {
+        if (finished) return;
+        portalWorld.style.opacity = '0';
+        stage.style.opacity = '0';
+        setTimeout(function () {
+          try { video.pause(); } catch (_) {}
+          signalTitle('__AG_BOOT_SKIP__');
+        }, 250);
+      }
+
+      window.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape') {
+          skipPlayback();
+        }
+      });
+
+      video.addEventListener('ended', function () {
+        signalTitle('__AG_BOOT_DONE__');
+      });
+
+      video.addEventListener('error', function () {
+        signalTitle('__AG_BOOT_FAIL__');
+      });
+
+      function placePortal(x1, y1, w, h, radius) {
+        portalWorld.style.display = 'block';
+        portalWorld.style.left = x1.toFixed(1) + 'px';
+        portalWorld.style.top = y1.toFixed(1) + 'px';
+        portalWorld.style.width = Math.max(1, w).toFixed(1) + 'px';
+        portalWorld.style.height = Math.max(1, h).toFixed(1) + 'px';
+        portalWorld.style.borderRadius = radius.toFixed(1) + 'px';
+      }
+
+      function tick() {
+        if (finished) return;
+
+        var t = video.currentTime || 0;
+        var vw = window.innerWidth || 1280;
+        var vh = window.innerHeight || 720;
+        var box = getVideoCoverBox(vw, vh);
+
+        var px1 = clamp(box.ox + PORTAL.x * box.rw, 0, vw);
+        var py1 = clamp(box.oy + PORTAL.y * box.rh, 0, vh);
+        var px2 = clamp(box.ox + (PORTAL.x + PORTAL.w) * box.rw, 0, vw);
+        var py2 = clamp(box.oy + (PORTAL.y + PORTAL.h) * box.rh, 0, vh);
+        var pw = Math.max(1, px2 - px1);
+        var ph = Math.max(1, py2 - py1);
+
+        if (t < PORTAL_IN_START) {
+          portalWorld.style.display = 'none';
+          stage.style.background = '#0c0d24';
+          stage.style.transform = 'scale(1)';
+          stage.style.opacity = '1';
+        } else if (!hubReady || t < EXPAND_START) {
+          var inU = smoothstep(clamp((t - PORTAL_IN_START) / (PORTAL_IN_END - PORTAL_IN_START), 0, 1));
+          placePortal(px1, py1, pw, ph, 6);
+          portalWorld.style.opacity = inU.toFixed(3);
+          portalWorld.style.transform = 'scale(' + lerp(0.985, 1.0, inU).toFixed(4) + ')';
+          portalLogo.style.opacity = '1';
+          stage.style.background = '#0c0d24';
+          stage.style.transform = 'scale(1)';
+          stage.style.opacity = '1';
+        } else {
+          stage.style.background = 'transparent';
+          var startT = Math.max(EXPAND_START, hubReadyAt);
+          var span = Math.max(0.25, EXPAND_END - startT);
+          var u = smoothstep(clamp((t - startT) / span, 0, 1));
+
+          var cx = lerp(px1, 0, u);
+          var cy = lerp(py1, 0, u);
+          var cw = lerp(pw, vw, u);
+          var ch = lerp(ph, vh, u);
+          placePortal(cx, cy, cw, ch, lerp(6, 0, u));
+          portalWorld.style.transform = 'scale(1)';
+
+          var logoFade = 1 - smoothstep(clamp(u / 0.45, 0, 1));
+          portalLogo.style.opacity = logoFade.toFixed(3);
+
+          var handoffFade = smoothstep(clamp((u - 0.58) / 0.42, 0, 1));
+          portalWorld.style.opacity = (1 - handoffFade).toFixed(3);
+
+          stage.style.transform = 'scale(' + lerp(1.0, 1.12, u).toFixed(4) + ')';
+          stage.style.opacity = (1 - u).toFixed(3);
+
+          if (t >= DURATION - 0.04) {
+            signalTitle('__AG_BOOT_DONE__');
+            return;
+          }
+        }
+
+        rafId = requestAnimationFrame(tick);
+      }
+
+      video.play().catch(function () {
+        video.muted = true;
+        video.play().catch(function () {
+          signalTitle('__AG_BOOT_FAIL__');
+        });
+      });
+
+      rafId = requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>
