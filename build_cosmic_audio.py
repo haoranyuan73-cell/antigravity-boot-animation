@@ -178,7 +178,20 @@ def prepare_voice(voice_path):
     return v_space, len(v)
 
 
+def print_usage():
+    print(
+        "Usage: python build_cosmic_audio.py <voice_wav_or_--no-voice> <output_wav>\n"
+        "Example:\n"
+        "  python build_cosmic_audio.py --no-voice cosmic_bed.wav\n"
+        "  python build_cosmic_audio.py voice.wav mixed_boot.wav"
+    )
+
+
 def main():
+    if any(arg in ("-h", "--help") for arg in sys.argv[1:]) or len(sys.argv) < 3:
+        print_usage()
+        sys.exit(0 if any(arg in ("-h", "--help") for arg in sys.argv[1:]) else 1)
+
     voice_path = sys.argv[1]
     out_path = sys.argv[2]
 
@@ -217,7 +230,7 @@ def main():
         mix = mix / max(1.0, peak / 0.88)
     mix = np.tanh(mix * 1.05) / np.tanh(1.05) * 0.84
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     sf.write(out_path, mix, SR, subtype="PCM_16")
     print(f"MIX_OK duration={len(mix)/SR:.3f}s peak={np.max(np.abs(mix)):.3f}")
 

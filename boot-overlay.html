@@ -14,6 +14,9 @@
       user-select: none;
       -webkit-user-select: none;
     }
+    body.demo-mode {
+      background: radial-gradient(circle at 38% 35%, #2b255f 0%, #151438 58%, #0b0c20 100%);
+    }
     #demo-bg {
       display: none;
       position: fixed;
@@ -46,6 +49,7 @@
       overflow: hidden;
       pointer-events: none;
       border-radius: 6px;
+      background: radial-gradient(circle at 50% 45%, rgba(108, 92, 212, 0.56) 0%, rgba(32, 28, 76, 0.90) 62%, #0c0d24 100%);
       box-shadow:
         inset 0 0 26px rgba(196, 178, 255, 0.42),
         0 0 24px rgba(144, 120, 255, 0.28);
@@ -139,7 +143,7 @@
       var rafId = 0;
 
       function toFileUrl(p) {
-        if (!p) return '../wallpapers/optimized/gemini/gemini-catgirl-twilight-terrace.png';
+        if (!p) return '';
         if (/^(file|https?|data):/i.test(p)) return p;
         var norm = p.replace(/\\/g, '/');
         if (/^[a-zA-Z]:\//.test(norm)) return encodeURI('file:///' + norm);
@@ -147,14 +151,24 @@
       }
 
       var wpUrl = toFileUrl(wpParam);
-      portalWp.src = wpUrl;
-      portalWp.addEventListener('error', function () {
-        portalWp.src = '../wallpapers/optimized/gemini/gemini-catgirl-twilight-terrace.png';
-      });
+      if (wpUrl) {
+        portalWp.src = wpUrl;
+        portalWp.addEventListener('error', function () {
+          portalWp.style.display = 'none';
+        });
+      } else {
+        portalWp.style.display = 'none';
+      }
 
       if (isDemo) {
-        demoBg.src = wpUrl;
-        demoBg.style.display = 'block';
+        document.body.classList.add('demo-mode');
+        if (wpUrl) {
+          demoBg.src = wpUrl;
+          demoBg.style.display = 'block';
+          demoBg.addEventListener('error', function () {
+            demoBg.style.display = 'none';
+          });
+        }
       }
 
       video.src = variant === 'trio'
